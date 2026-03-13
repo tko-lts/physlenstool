@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lens Optics Lab - Google Sites Edition</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load React and Babel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #f8fafc; font-family: sans-serif; }
+        canvas { max-width: 100%; height: auto; background: white; border-radius: 12px; }
+        input[type="range"] { cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const CM_TO_PX = 20;
+            const [focalLength, setFocalLength] = useState(5.0);
+            const [objectDistance, setObjectDistance] = useState(12.0);
+            const [objectHeight, setObjectHeight] = useState(3.0);
+            const [showRays, setShowRays] = useState({ r1: true, r2: true, r3: false });
+            const [showImage, setShowImage] = useState(true);
+            const [lensMode, setLensMode] = useState('convex'); 
+
+            const canvasRef = useRef(null);
+
+            const calcImageData = (u, f, isConvex) => {
+                const effectiveF = isConvex ? f : -f;
+                const diff = u - effectiveF;
+                if (Math.abs(diff) < 0.1) {
+                    return { v: null, h: null, nature: "No Image (At Focus)", m: 0 };
+                }
+                const v = (effectiveF * u) / diff;
+                const m = -v / u;
+                const ih = objectHeight * m;
+                
+                const magType = Math.abs(m) > 1.01 ? "Magnified" : (Math.abs(m) < 0.99 ? "Diminished" : "Same Size");
+                const orient = m > 0 ? "Upright" : "Inverted";
+                const type = v > 0 ? "Real" : "Virtual";
+
+                return { 
+                    v: parseFloat(v.toFixed(2)), 
+                    h: parseFloat(ih.toFixed(2)), 
+                    nature: `${magType}, ${orient}, ${type}`, 
+                    m: Math.abs(m) 
+                };
+            };
+
+            const drawLens = (ctx, centerX, centerY, isConvex) => {
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 2.5;
+                const lensLineHeight = 160;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY - lensLineHeight);
+                ctx.lineTo(centerX, centerY + lensLineHeight);
+                ctx.stroke();
+                
+                if (isConvex) {
+                    // Convex symbol (arrows pointing out)
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - 12, centerY - lensLineHeight + 12);
+                    ctx.lineTo(centerX, centerY - lensLineHeight);
+                    ctx.lineTo(centerX + 12, centerY - lensLineHeight + 12);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - 12, centerY + lensLineHeight - 12);
+                    ctx.lineTo(centerX, centerY + lensLineHeight);
+                    ctx.lineTo(centerX + 12, centerY + lensLineHeight - 12);
+                    ctx.stroke();
+                } else {
+                    // Concave symbol (arrows pointing in)
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - 12, centerY - lensLineHeight);
+                    ctx.lineTo(centerX, centerY - lensLineHeight + 12);
+                    ctx.moveTo(centerX + 12, centerY - lensLineHeight);
+                    ctx.lineTo(centerX, centerY - lensLineHeight + 12);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - 12, centerY + lensLineHeight);
+                    ctx.lineTo(centerX, centerY + lensLineHeight - 12);
+                    ctx.moveTo(centerX + 12, centerY + lensLineHeight);
+                    ctx.lineTo(centerX, centerY + lensLineHeight - 12);
+                    ctx.stroke();
+                }
+            };
+
+            const drawRayDiagram = (ctx, width, height, centerX, centerY, isConvex, colorSet) => {
+                const f = focalLength;
+                const u = objectDistance;
+                const img = calcImageData(u, f, isConvex);
+                const u_px = u * CM_TO_PX;
+                const oh_px = objectHeight * CM_TO_PX;
+                const ox = centerX - u_px;
+                const oy_tip = centerY - oh_px;
+
+                // Draw Image
+                if (img.v !== null && showImage) {
+                    const ix = centerX + (img.v * CM_TO_PX);
+                    const ih_px = img.h * CM_TO_PX;
+                    const iy_tip = centerY - ih_px;
+                    
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = colorSet.image;
+                    if (img.v < 0) ctx.setLineDash([6, 3]);
+                    
+                    // Image Body
+                    ctx.beginPath(); 
+                    ctx.moveTo(ix, centerY); 
+                    ctx.lineTo(ix, iy_tip); 
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    // Correct Arrow head direction for image
+                    // If h > 0 (Upright), arrow points up. If h < 0 (Inverted), arrow points down.
+                    const arrowDir = img.h > 0 ? 8 : -8; 
+                    ctx.beginPath();
+                    ctx.moveTo(ix - 5, iy_tip + arrowDir); 
+                    ctx.lineTo(ix, iy_tip); 
+                    ctx.lineTo(ix + 5, iy_tip + arrowDir);
+                    ctx.stroke();
+                }
+
+                if (img.v !== null) {
+                    ctx.lineWidth = 1.5;
+                    const ix = centerX + (img.v * CM_TO_PX);
+                    const iy_tip = centerY - (img.h * CM_TO_PX);
+
+                    // Rule 1: Parallel -> Focus
+                    if (showRays.r1) {
+                        ctx.strokeStyle = colorSet.r1;
+                        ctx.beginPath(); ctx.moveTo(ox, oy_tip); ctx.lineTo(centerX, oy_tip); ctx.stroke();
+                        const slope = (iy_tip - oy_tip) / (ix - centerX);
+                        ctx.beginPath(); ctx.moveTo(centerX, oy_tip);
+                        ctx.lineTo(width, oy_tip + (width - centerX) * slope);
+                        ctx.stroke();
+                        if(img.v < 0) {
+                            ctx.setLineDash([4,4]);
+                            ctx.beginPath(); ctx.moveTo(centerX, oy_tip); ctx.lineTo(ix, iy_tip); ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+                    }
+                    // Rule 2: Center
+                    if (showRays.r2) {
+                        ctx.strokeStyle = colorSet.r2;
+                        const slope = (iy_tip - oy_tip) / (ix - ox);
+                        ctx.beginPath(); ctx.moveTo(ox, oy_tip);
+                        ctx.lineTo(width, oy_tip + (width - ox) * slope);
+                        ctx.stroke();
+                    }
+                    // Rule 3: Focus -> Parallel
+                    if (showRays.r3) {
+                        ctx.strokeStyle = colorSet.r3;
+                        ctx.beginPath(); ctx.moveTo(ox, oy_tip); ctx.lineTo(centerX, iy_tip); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(centerX, iy_tip); ctx.lineTo(width, iy_tip); ctx.stroke();
+                        if(img.v < 0) {
+                            ctx.setLineDash([4,4]);
+                            ctx.beginPath(); ctx.moveTo(centerX, iy_tip); ctx.lineTo(ix, iy_tip); ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+                    }
+                }
+            };
+
+            const draw = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const { width, height } = canvas;
+                const centerX = width / 2;
+                const centerY = height / 2;
+                ctx.clearRect(0, 0, width, height);
+
+                // Grid
+                ctx.lineWidth = 0.5;
+                ctx.strokeStyle = '#f1f5f9';
+                for(let i = 0; i < width; i += CM_TO_PX) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke(); }
+                
+                // Axis
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(width, centerY); ctx.stroke();
+
+                const f_px = focalLength * CM_TO_PX;
+                const drawPoint = (x, label) => {
+                    ctx.fillStyle = '#ef4444';
+                    ctx.beginPath(); ctx.arc(x, centerY, 4, 0, Math.PI * 2); ctx.fill();
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillText(label, x - 8, centerY + 22);
+                };
+                drawPoint(centerX - f_px, 'F'); drawPoint(centerX + f_px, 'F');
+                drawPoint(centerX - 2 * f_px, '2F'); drawPoint(centerX + 2 * f_px, '2F');
+
+                // Object
+                const u_px = objectDistance * CM_TO_PX;
+                const oh_px = objectHeight * CM_TO_PX;
+                const ox = centerX - u_px;
+                const oy_tip = centerY - oh_px;
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(ox, centerY); ctx.lineTo(ox, oy_tip); ctx.stroke();
+                // Arrow head for object (Always points up as height is positive)
+                ctx.beginPath();
+                ctx.moveTo(ox - 5, oy_tip + 8); ctx.lineTo(ox, oy_tip); ctx.lineTo(ox + 5, oy_tip + 8);
+                ctx.stroke();
+
+                const convexColors = { image: '#dc2626', r1: '#ea580c', r2: '#059669', r3: '#0891b2' };
+                const concaveColors = { image: '#9333ea', r1: '#3b82f6', r2: '#be185d', r3: '#4f46e5' };
+
+                if (lensMode === 'convex' || lensMode === 'both') {
+                    drawLens(ctx, centerX, centerY, true);
+                    drawRayDiagram(ctx, width, height, centerX, centerY, true, convexColors);
+                }
+                if (lensMode === 'concave' || lensMode === 'both') {
+                    drawLens(ctx, centerX, centerY, false);
+                    drawRayDiagram(ctx, width, height, centerX, centerY, false, concaveColors);
+                }
+            };
+
+            useEffect(() => { draw(); }, [focalLength, objectDistance, objectHeight, showRays, showImage, lensMode]);
+
+            const formatNum = (val) => (val !== null && isFinite(val)) ? val.toFixed(2) : "N/A";
+            const convexData = calcImageData(objectDistance, focalLength, true);
+            const concaveData = calcImageData(objectDistance, focalLength, false);
+
+            return (
+                <div className="flex flex-col w-full min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+                    <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Lens Optics Simulator</h1>
+                            <p className="text-slate-500 font-medium">Interactive Ray Tracing Laboratory</p>
+                        </div>
+                        <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                            {['convex', 'concave', 'both'].map(m => (
+                                <button 
+                                    key={m}
+                                    onClick={() => setLensMode(m)} 
+                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${lensMode === m ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    {m.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <aside className="lg:col-span-3 space-y-6">
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-sm font-black mb-6 text-blue-600 uppercase tracking-widest">Controls</h3>
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-xs font-bold text-slate-500"><span>Focal Length (f)</span><span className="text-blue-600">{focalLength} cm</span></div>
+                                        <input type="range" min="2" max="8" step="0.5" value={focalLength} onChange={e=>setFocalLength(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-xs font-bold text-slate-500"><span>Object Dist (u)</span><span className="text-blue-600">{objectDistance} cm</span></div>
+                                        <input type="range" min="1" max="20" step="0.5" value={objectDistance} onChange={e=>setObjectDistance(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none accent-blue-600" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-sm font-black mb-4 text-slate-400 uppercase tracking-widest">Ray Visibility</h3>
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={showRays.r1} onChange={() => setShowRays(prev => ({...prev, r1: !prev.r1}))} className="w-4 h-4 rounded accent-orange-500" />
+                                        <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900">Parallel Ray</span>
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={showRays.r2} onChange={() => setShowRays(prev => ({...prev, r2: !prev.r2}))} className="w-4 h-4 rounded accent-emerald-500" />
+                                        <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900">Central Ray</span>
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={showRays.r3} onChange={() => setShowRays(prev => ({...prev, r3: !prev.r3}))} className="w-4 h-4 rounded accent-cyan-500" />
+                                        <span className="text-xs font-bold text-slate-600 group-hover:text-slate-900">Focal Ray</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <main className="lg:col-span-9 space-y-6">
+                            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-center overflow-hidden min-h-[420px]">
+                                <canvas ref={canvasRef} width={800} height={400} className="w-full h-auto" />
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {(lensMode === 'convex' || lensMode === 'both') && (
+                                    <div className="bg-white p-6 rounded-2xl border-l-8 border-rose-500 shadow-sm">
+                                        <div className="text-[10px] font-black text-rose-500 uppercase tracking-tighter mb-1">Convex Lens Results</div>
+                                        <div className="text-xl font-bold text-slate-800 mb-2">{convexData.nature}</div>
+                                        <div className="text-xs text-slate-400 font-mono bg-slate-50 p-2 rounded-lg">
+                                            Image dist (v): {formatNum(convexData.v)} cm <br/>
+                                            Magnification: {formatNum(convexData.m)}x
+                                        </div>
+                                    </div>
+                                )}
+                                {(lensMode === 'concave' || lensMode === 'both') && (
+                                    <div className="bg-white p-6 rounded-2xl border-l-8 border-purple-500 shadow-sm">
+                                        <div className="text-[10px] font-black text-purple-500 uppercase tracking-tighter mb-1">Concave Lens Results</div>
+                                        <div className="text-xl font-bold text-slate-800 mb-2">{concaveData.nature}</div>
+                                        <div className="text-xs text-slate-400 font-mono bg-slate-50 p-2 rounded-lg">
+                                            Image dist (v): {formatNum(concaveData.v)} cm <br/>
+                                            Magnification: {formatNum(concaveData.m)}x
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
